@@ -6,7 +6,6 @@
 // For more information about Flutter integration tests, please see
 // https://flutter.dev/to/integration-testing
 
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -15,11 +14,10 @@ import 'package:bluetodev/bluetodev.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('getPlatformVersion test', (WidgetTester tester) async {
-    final Bluetodev plugin = Bluetodev();
-    final String? version = await plugin.getPlatformVersion();
-    // The version string depends on the host platform running the test, so
-    // just assert that some non-empty string is returned.
-    expect(version?.isNotEmpty, true);
+  testWidgets('initService test', (WidgetTester tester) async {
+    // BluetodevController uses static methods, no instantiation needed.
+    // initService should return a bool (true/false) without throwing.
+    final bool result = await BluetodevController.initService();
+    expect(result, isA<bool>());
   });
 }
