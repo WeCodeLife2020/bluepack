@@ -1,0 +1,88 @@
+group = "com.bluetodev.bluetodev"
+version = "1.0-SNAPSHOT"
+
+buildscript {
+    ext.kotlin_version = "1.9.22"
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://jitpack.io" }
+    }
+
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.2.2")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version")
+    }
+}
+
+allprojects {
+    def libsDir = new File(project.projectDir, "libs")
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://jitpack.io" }
+        flatDir {
+            dirs libsDir
+        }
+    }
+}
+
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+
+android {
+    namespace = "com.bluetodev.bluetodev"
+
+    compileSdk = 34
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+
+    sourceSets {
+        main.java.srcDirs += "src/main/kotlin"
+        test.java.srcDirs += "src/test/kotlin"
+    }
+
+    defaultConfig {
+        minSdk = 21
+        targetSdk = 34
+    }
+
+    repositories {
+        flatDir {
+            dirs "libs"
+        }
+    }
+
+    dependencies {
+        implementation(name: "lepu-blepro-1.2.0", ext: "aar")
+        implementation "no.nordicsemi.android:ble:2.10.0"
+        implementation "com.github.michaellee123:LiveEventBus:1.8.14"
+        implementation "androidx.lifecycle:lifecycle-livedata-ktx:2.6.2"
+        implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
+        // Transitive dependencies required by Lepu SDK at runtime
+        implementation "io.getstream:stream-log-android:1.1.4"
+        implementation "io.getstream:stream-log-android-file:1.1.4"
+        
+        testImplementation("org.jetbrains.kotlin:kotlin-test")
+        testImplementation("org.mockito:mockito-core:5.0.0")
+    }
+
+    testOptions {
+        unitTests.all {
+            useJUnitPlatform()
+
+            testLogging {
+                events "passed", "skipped", "failed", "standardOut", "standardError"
+                outputs.upToDateWhen {false}
+                showStandardStreams = true
+            }
+        }
+    }
+}
