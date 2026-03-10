@@ -87,3 +87,15 @@ android {
         }
     }
 }
+
+rootProject.allprojects {
+    repositories {
+        maven { url 'https://jitpack.io' }
+        def bluetodevProject = rootProject.findProject(':bluetodev')
+        if (bluetodevProject != null) {
+            flatDir {
+                dirs bluetodevProject.file('libs')
+            }
+        }
+    }
+}
