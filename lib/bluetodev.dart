@@ -9,3 +9,4 @@ export 'src/bluetodev_controller.dart';
 export 'src/models/device_info.dart';
 export 'src/models/measurement_event.dart';
 export 'src/models/device_models.dart';
+export 'src/lescale_controller.dart';

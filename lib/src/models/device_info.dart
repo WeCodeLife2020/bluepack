@@ -4,12 +4,14 @@ class LepuDeviceInfo {
   final String mac;
   final int model;
   final int rssi;
+  final String sdk; // "lepu", "icomon", or "lescale"
 
   const LepuDeviceInfo({
     required this.name,
     required this.mac,
     required this.model,
     required this.rssi,
+    this.sdk = 'lepu',
   });
 
   factory LepuDeviceInfo.fromMap(Map<String, dynamic> map) {
@@ -18,6 +20,7 @@ class LepuDeviceInfo {
       mac: (map['mac'] as String?) ?? '',
       model: (map['model'] as int?) ?? -1,
       rssi: (map['rssi'] as int?) ?? 0,
+      sdk: (map['sdk'] as String?) ?? 'lepu',
     );
   }
 
@@ -26,10 +29,12 @@ class LepuDeviceInfo {
     'mac': mac,
     'model': model,
     'rssi': rssi,
+    'sdk': sdk,
   };
 
   /// Returns a human-readable device type based on the model number.
   String get deviceType {
+    if (sdk == 'icomon') return 'scale';
     if (LepuDeviceModels.isEcg(model)) return 'ecg';
     if (LepuDeviceModels.isOximeter(model)) return 'oximeter';
     if (LepuDeviceModels.isBp(model)) return 'bp';
@@ -37,15 +42,15 @@ class LepuDeviceInfo {
   }
 
   @override
-  String toString() => 'LepuDeviceInfo($name, $mac, model=$model, rssi=$rssi)';
+  String toString() => 'LepuDeviceInfo($name, $mac, model=$model, rssi=$rssi, sdk=$sdk)';
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is LepuDeviceInfo && mac == other.mac && model == other.model;
+      other is LepuDeviceInfo && mac == other.mac;
 
   @override
-  int get hashCode => mac.hashCode ^ model.hashCode;
+  int get hashCode => mac.hashCode;
 }
 
 /// Helper class for device model classification.

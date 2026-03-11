@@ -113,6 +113,20 @@ class BluetodevController {
     return result ?? false;
   }
 
+  /// Update the internal User Profile for scales (iComon)
+  static Future<bool> updateUserInfo({
+    required double height,
+    required int age,
+    required bool isMale,
+  }) async {
+    final result = await _method.invokeMethod<bool>('updateUserInfo', {
+      'height': height,
+      'age': age,
+      'isMale': isMale,
+    });
+    return result ?? false;
+  }
+
   // ════════════════════════════════════════════════════════════════════
   // Scanning
   // ════════════════════════════════════════════════════════════════════
@@ -138,13 +152,16 @@ class BluetodevController {
   // Connection
   // ════════════════════════════════════════════════════════════════════
 
-  /// Connect to a device by [model] and [mac] address.
+  /// Connect to a device by [mac] address.
   ///
+  /// For Lepu devices, [model] is required.
+  /// For iComon devices, pass [sdk] = 'icomon'.
   /// The device must first be discovered via [scan].
-  static Future<bool> connect({required int model, required String mac}) async {
+  static Future<bool> connect({int? model, required String mac, String sdk = 'lepu'}) async {
     final result = await _method.invokeMethod<bool>('connect', {
-      'model': model,
+      if (model != null) 'model': model,
       'mac': mac,
+      'sdk': sdk,
     });
     return result ?? false;
   }

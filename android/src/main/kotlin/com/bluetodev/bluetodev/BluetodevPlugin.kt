@@ -29,6 +29,16 @@ import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry
 import no.nordicsemi.android.ble.observer.ConnectionObserver
 
+import cn.icomon.icdevicemanager.ICDeviceManager
+import cn.icomon.icdevicemanager.callback.ICScanDeviceDelegate
+import cn.icomon.icdevicemanager.model.device.ICDevice
+import cn.icomon.icdevicemanager.model.device.ICScanDeviceInfo
+import cn.icomon.icdevicemanager.model.device.ICUserInfo
+import cn.icomon.icdevicemanager.model.other.ICConstant
+import cn.icomon.icdevicemanager.model.other.ICDeviceManagerConfig
+import cn.icomon.icdevicemanager.model.data.ICWeightData
+import cn.icomon.icdevicemanager.model.data.ICWeightCenterData
+
 /**
  * BluetodevPlugin — Flutter MethodChannel + EventChannel bridge to Lepu BLE SDK.
  *
@@ -57,6 +67,128 @@ class BluetodevPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
     private var serviceInitialized = false
     private var connectedModel: Int = -1
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    // ── iComon Delegates ────────────────────────────────────────────────
+    private val iComonScaleKeywords = listOf("lescale", "icomon", "fi2016", "f4", "qn-scale", "adore", "health scale", "chipsea")
+
+    private val iComonScanDelegate = object : ICScanDeviceDelegate {
+        override fun onScanResult(deviceInfo: ICScanDeviceInfo?) {
+            deviceInfo?.let {
+                val name = (it.name ?: "").lowercase()
+                // Only emit devices that look like iComon scales
+                val isScale = iComonScaleKeywords.any { kw -> name.contains(kw) }
+                if (isScale) {
+                    sendEvent(mapOf(
+                        "event" to "deviceFound",
+                        "name" to (it.name ?: ""),
+                        "mac" to it.macAddr,
+                        "rssi" to it.rssi,
+                        "sdk" to "icomon"
+                    ))
+                }
+            }
+        }
+    }
+
+    private val iComonDeviceDelegate = object : IComonDelegateBase() {
+        override fun onDeviceConnectionChanged(device: ICDevice?, state: ICConstant.ICDeviceConnectState?) {
+            device?.let {
+                val stateStr = if (state == ICConstant.ICDeviceConnectState.ICDeviceConnectStateConnected) "connected" else "disconnected"
+                sendEvent(mapOf(
+                    "event" to "connectionState",
+                    "state" to stateStr,
+                    "mac" to it.macAddr,
+                    "sdk" to "icomon"
+                ))
+            }
+        }
+
+        override fun onReceiveMeasureStepData(device: ICDevice?, step: ICConstant.ICMeasureStep?, data2: Any?) {
+            if (device == null || step == null || data2 == null) return
+            when (step) {
+                ICConstant.ICMeasureStep.ICMeasureStepMeasureWeightData -> {
+                    (data2 as? ICWeightData)?.let { onReceiveWeightData(device, it) }
+                }
+                ICConstant.ICMeasureStep.ICMeasureStepMeasureCenterData -> {
+                    (data2 as? ICWeightCenterData)?.let {
+                        sendEvent(mapOf(
+                            "event" to "rtData",
+                            "deviceType" to "scale",
+                            "deviceFamily" to "icomon",
+                            "mac" to device.macAddr,
+                            "sdk" to "icomon",
+                            "isStabilized" to it.isStabilized,
+                            "leftPercent" to it.leftPercent,
+                            "rightPercent" to it.rightPercent
+                        ))
+                    }
+                }
+                ICConstant.ICMeasureStep.ICMeasureStepHrResult -> {
+                    (data2 as? ICWeightData)?.let {
+                        sendEvent(mapOf(
+                            "event" to "rtData",
+                            "deviceType" to "scale",
+                            "deviceFamily" to "icomon",
+                            "mac" to device.macAddr,
+                            "sdk" to "icomon",
+                            "hr" to it.hr,
+                            "step" to "ICMeasureStepHrResult"
+                        ))
+                    }
+                }
+                ICConstant.ICMeasureStep.ICMeasureStepMeasureOver -> {
+                    (data2 as? ICWeightData)?.let {
+                        it.isStabilized = true
+                        onReceiveWeightData(device, it)
+                    }
+                }
+                else -> {}
+            }
+        }
+
+        override fun onReceiveWeightData(device: ICDevice?, data: ICWeightData?) {
+            if (device == null || data == null) return
+
+            val w = data.weight_kg.toDouble()
+            // Round helper
+            fun r1(v: Double) = Math.round(v * 10.0) / 10.0
+            fun r2(v: Double) = Math.round(v * 100.0) / 100.0
+
+            // Convert percentages to kg where the original app shows kg
+            val muscleKg = r1(data.musclePercent.toDouble() / 100.0 * w)
+            val skeletalMuscleKg = r1(data.smPercent.toDouble() / 100.0 * w)
+            val fatMassKg = r1(data.bodyFatPercent.toDouble() / 100.0 * w)
+
+            sendEvent(mapOf(
+                "event" to "rtData",
+                "deviceType" to "scale",
+                "deviceFamily" to "icomon",
+                "mac" to device.macAddr,
+                "sdk" to "icomon",
+                "isLocked" to data.isStabilized,
+                "weightKg" to r2(w),
+                "bmi" to r1(data.bmi.toDouble()),
+                "fat" to r1(data.bodyFatPercent.toDouble()),
+                "fat_mass" to fatMassKg,
+                "muscle" to muscleKg,
+                "musclePercent" to r1(data.musclePercent.toDouble()),
+                "water" to r1(data.moisturePercent.toDouble()),
+                "bone" to r1(data.boneMass.toDouble()),
+                "protein" to r1(data.proteinPercent.toDouble()),
+                "bmr" to data.bmr,
+                "visceral" to r1(data.visceralFat.toDouble()),
+                "skeletal_muscle" to skeletalMuscleKg,
+                "skeletalMusclePercent" to r1(data.smPercent.toDouble()),
+                "subcutaneous" to r1(data.subcutaneousFatPercent.toDouble()),
+                "body_age" to data.physicalAge,
+                "ci" to r1(data.smi.toDouble()),
+                "body_score" to r1(data.bodyScore.toDouble()),
+                "temperature" to data.temperature,
+                "heartRate" to data.hr,
+                "impedance" to data.imp
+            ))
+        }
+    }
 
     // ── All supported device models ─────────────────────────────────────
     private val allModels = intArrayOf(
@@ -197,6 +329,7 @@ class BluetodevPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
             "getDeviceInfo"     -> handleGetDeviceInfo(call, result)
             "getFileList"       -> handleGetFileList(call, result)
             "factoryReset"      -> handleFactoryReset(call, result)
+            "updateUserInfo"    -> handleUpdateUserInfo(call, result)
             "isServiceReady"    -> result.success(serviceInitialized)
             "getConnectedModel" -> result.success(connectedModel)
             else                -> result.notImplemented()
@@ -273,6 +406,21 @@ class BluetodevPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
                 val app = ctx.applicationContext as Application
                 registerLiveEventBus()
                 BleServiceHelper.BleServiceHelper.initService(app).initLog(true)
+                
+                // Initialize iComon SDK
+                val config = ICDeviceManagerConfig().apply {
+                    context = app
+                }
+                val userInfo = ICUserInfo().apply {
+                    age = 25
+                    height = 175
+                    sex = ICConstant.ICSexType.ICSexTypeMale
+                    peopleType = ICConstant.ICPeopleType.ICPeopleTypeNormal
+                }
+                ICDeviceManager.shared().setDelegate(iComonDeviceDelegate)
+                ICDeviceManager.shared().updateUserInfo(userInfo)
+                ICDeviceManager.shared().initMgrWithConfig(config)
+
                 serviceInitialized = true
             } else {
                 // If already initialized, manually trigger serviceReady to unblock UI
@@ -283,6 +431,21 @@ class BluetodevPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
             Log.e(TAG, "initService failed", e)
             result.error("INIT_FAILED", e.message, null)
         }
+    }
+
+    private fun handleUpdateUserInfo(call: MethodCall, result: Result) {
+        val height = call.argument<Double>("height") ?: 170.0
+        val age = call.argument<Int>("age") ?: 25
+        val isMale = call.argument<Boolean>("isMale") ?: true
+
+        val userInfo = ICUserInfo().apply {
+            this.age = age
+            this.height = height.toInt()
+            this.sex = if (isMale) ICConstant.ICSexType.ICSexTypeMale else ICConstant.ICSexType.ICSexTypeFemal
+            this.peopleType = ICConstant.ICPeopleType.ICPeopleTypeNormal
+        }
+        ICDeviceManager.shared().updateUserInfo(userInfo)
+        result.success(true)
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -303,6 +466,7 @@ class BluetodevPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
             val models = modelList?.toIntArray() ?: allModels
             BluetoothController.clear()
             BleServiceHelper.BleServiceHelper.startScan(models)
+            ICDeviceManager.shared().scanDevice(iComonScanDelegate)
             result.success(true)
         } catch (e: SecurityException) {
             Log.e(TAG, "SecurityException during scan", e)
@@ -316,6 +480,7 @@ class BluetodevPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
     private fun handleStopScan(result: Result) {
         try {
             BleServiceHelper.BleServiceHelper.stopScan()
+            ICDeviceManager.shared().stopScan()
             result.success(true)
         } catch (e: Exception) {
             result.error("STOP_SCAN_FAILED", e.message, null)
@@ -331,12 +496,34 @@ class BluetodevPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
             result.error("NO_CONTEXT", "Context is null", null)
             return
         }
-        val model = call.argument<Int>("model")
-        val mac = call.argument<String>("mac")
-        if (model == null || mac == null) {
-            result.error("INVALID_ARGS", "model and mac are required", null)
+
+        val mac = call.argument<String>("mac") ?: run {
+            result.error("INVALID_ARGS", "mac is required", null)
             return
         }
+        val sdk = call.argument<String>("sdk") ?: "lepu"
+
+        if (sdk == "icomon") {
+            try {
+                val icDevice = ICDevice()
+                icDevice.macAddr = mac
+                ICDeviceManager.shared().addDevice(icDevice) { _, code ->
+                    Log.d(TAG, "iComon addDevice result: $code")
+                }
+                result.success(true)
+            } catch (e: Exception) {
+                result.error("CONNECT_FAILED", e.message, null)
+            }
+            return
+        }
+
+        // Lepu logic
+        val model = call.argument<Int>("model")
+        if (model == null) {
+            result.error("INVALID_ARGS", "model is required for lepu", null)
+            return
+        }
+
         try {
             val devices = BluetoothController.getDevices()
             var target: Bluetooth? = null
@@ -528,6 +715,7 @@ class BluetodevPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
                         "mac" to (d.macAddr ?: ""),
                         "model" to d.model,
                         "rssi" to d.rssi,
+                        "sdk" to "lepu"
                     ))
                 }
             }
